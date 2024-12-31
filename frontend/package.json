@@ -2,5 +2,14 @@
   "dependencies": {
     "solid-app-router": "^0.4.2",
     "solid-js": "^1.9.3"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^4.5.0",
+    "vite-plugin-solid": "^2.5.0"
   }
 }
