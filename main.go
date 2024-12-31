@@ -18,6 +18,13 @@ type CommandResponse struct {
 	Message string `json:"message"`
 }
 
+// KeyCheckResponse represents the response for key check endpoint
+type KeyCheckResponse struct {
+	Exists    bool   `json:"exists"`
+	ValueLen  int    `json:"valueLength,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
 // YAML file path
 const yamlFilePath = "config.yaml"
 
@@ -76,6 +83,45 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 	writeResponse(w, true, "Command executed successfully")
 }
 
+func handleKeyCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		writeKeyCheckResponse(w, KeyCheckResponse{
+			Exists: false,
+			Error:  "Key parameter is required",
+		})
+		return
+	}
+
+	cmd := exec.Command("yq", "eval", ".\""+key+"\"", yamlFilePath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		writeKeyCheckResponse(w, KeyCheckResponse{
+			Exists: false,
+			Error:  "Error checking key: " + string(output),
+		})
+		return
+	}
+
+	value := strings.TrimSpace(string(output))
+	if value == "null" {
+		writeKeyCheckResponse(w, KeyCheckResponse{
+			Exists: false,
+		})
+		return
+	}
+
+	writeKeyCheckResponse(w, KeyCheckResponse{
+		Exists:   true,
+		ValueLen: len(value),
+	})
+}
+
 func writeResponse(w http.ResponseWriter, success bool, message string) {
 	resp := CommandResponse{
 		Success: success,
@@ -85,7 +131,13 @@ func writeResponse(w http.ResponseWriter, success bool, message string) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func writeKeyCheckResponse(w http.ResponseWriter, resp KeyCheckResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 func main() {
 	http.HandleFunc("/api/command", handleCommand)
+	http.HandleFunc("/api/check-key", handleKeyCheck)
 	http.ListenAndServe(":8080", nil)
 }
