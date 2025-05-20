@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v57/github"
+	"github.com/joho/godotenv"
 	"golang.org/x/oauth2"
 )
 
@@ -116,16 +117,25 @@ func executeYqCommand(content []byte, command string) ([]byte, error) {
 			return nil, fmt.Errorf("invalid set syntax. Use 'set key=value'")
 		}
 		key, value := kv[0], kv[1]
-		cmd = exec.Command("yq", "eval", fmt.Sprintf(".%q = %q", key, value), "-")
+
+		// Convert dot notation to proper YAML path notation for nested keys
+		// Replace dots with proper path notation
+		yamlPath := convertDotNotationToPath(key)
+		cmd = exec.Command("yq", "eval", fmt.Sprintf("%s = %q", yamlPath, value), "-")
 	case "delete":
-		cmd = exec.Command("yq", "eval", fmt.Sprintf("del(.%q)", args), "-")
+		// Convert dot notation to proper YAML path notation for nested keys
+		yamlPath := convertDotNotationToPath(args)
+		cmd = exec.Command("yq", "eval", fmt.Sprintf("del(%s)", yamlPath), "-")
 	case "add":
 		kv := strings.SplitN(args, "=", 2)
 		if len(kv) != 2 {
 			return nil, fmt.Errorf("invalid add syntax. Use 'add key=value'")
 		}
 		key, value := kv[0], kv[1]
-		cmd = exec.Command("yq", "eval", fmt.Sprintf(".%q = %q", key, value), "-")
+
+		// Convert dot notation to proper YAML path notation for nested keys
+		yamlPath := convertDotNotationToPath(key)
+		cmd = exec.Command("yq", "eval", fmt.Sprintf("%s = %q", yamlPath, value), "-")
 	default:
 		return nil, fmt.Errorf("unknown command. Use 'set', 'delete', or 'add'")
 	}
@@ -133,6 +143,27 @@ func executeYqCommand(content []byte, command string) ([]byte, error) {
 	// Set up input/output pipes
 	cmd.Stdin = strings.NewReader(string(content))
 	return cmd.CombinedOutput()
+}
+
+// convertDotNotationToPath converts a dot notation key to a proper YAML path
+// e.g., "parent.child.key" becomes ".parent.child.key"
+func convertDotNotationToPath(dotKey string) string {
+	// If the key doesn't contain dots, just quote it
+	if !strings.Contains(dotKey, ".") {
+		return fmt.Sprintf(".%q", dotKey)
+	}
+
+	// For keys with dots, build a proper path expression
+	parts := strings.Split(dotKey, ".")
+	var pathBuilder strings.Builder
+
+	for _, part := range parts {
+		// Always add a dot separator
+		pathBuilder.WriteString(".")
+		pathBuilder.WriteString(fmt.Sprintf("%q", part))
+	}
+
+	return pathBuilder.String()
 }
 
 // getFileContent fetches a file's content from GitHub
@@ -309,8 +340,9 @@ func handleKeyCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check the key using yq
-	cmd := exec.Command("yq", "eval", fmt.Sprintf(".%q", key), "-")
+	// Check the key using yq with proper path handling
+	yamlPath := convertDotNotationToPath(key)
+	cmd := exec.Command("yq", "eval", yamlPath, "-")
 	cmd.Stdin = strings.NewReader(content)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -349,11 +381,11 @@ func extractYamlKeys(content string) ([]string, error) {
 	}
 	tmpFile.Close()
 
-	// Use yq to extract all keys without values
-	cmd := exec.Command("yq", "eval", ".. | select(. == *) | path | join(\".\") | select(length > 0)", tmpFile.Name())
+	// Use a simpler yq command to extract all paths in the YAML document
+	cmd := exec.Command("yq", "eval", "... | select(. != null) | path | join(\".\")", tmpFile.Name())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract keys: %v", err)
+		return nil, fmt.Errorf("failed to extract keys: %s: %s", err, string(output))
 	}
 
 	// Split the output by lines and filter empty lines
@@ -492,6 +524,13 @@ func handleServerConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Load .env file if it exists
+	if err := godotenv.Load(); err != nil {
+		log.Printf("Warning: .env file not found or could not be loaded: %v", err)
+	} else {
+		log.Println("Successfully loaded .env file")
+	}
+
 	// Load server configuration from environment variables
 	loadServerConfig()
 

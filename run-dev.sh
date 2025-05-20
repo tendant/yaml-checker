@@ -20,19 +20,8 @@ cleanup() {
 # Set up trap to catch Ctrl+C and other termination signals
 trap cleanup SIGINT SIGTERM
 
-# Load environment variables from .env file if it exists
-if [ -f .env ]; then
-    echo "Loading environment variables from .env file..."
-    export $(grep -v '^#' .env | xargs)
-fi
-
-# Set default environment variables if not already set
-export REPO_OWNER=${REPO_OWNER:-""}
-export REPO_NAME=${REPO_NAME:-""}
-export BRANCH=${BRANCH:-"main"}
-export GITHUB_TOKEN=${GITHUB_TOKEN:-""}
-export FILE_PATHS=${FILE_PATHS:-"config.yaml,config/app.yaml,deploy/values.yaml"}
-export PORT=${PORT:-"8082"}
+# Environment variables will be loaded by the Go application using godotenv
+echo "Environment variables will be loaded from .env file by the Go application"
 
 # Start the backend server
 echo "Starting Go backend server..."
