@@ -160,6 +160,23 @@ func getFileContent(r *http.Request, req CommandRequest) (string, *github.Reposi
 	return content, fileContent, nil
 }
 
+// applyServerDefaults applies server configuration defaults to the request
+func applyServerDefaults(req *CommandRequest) {
+	// Apply server defaults for empty fields
+	if req.Owner == "" {
+		req.Owner = serverConfig.RepoOwner
+	}
+	if req.Repo == "" {
+		req.Repo = serverConfig.RepoName
+	}
+	if req.Branch == "" {
+		req.Branch = serverConfig.Branch
+	}
+	if req.Token == "" {
+		req.Token = serverConfig.GitHubToken
+	}
+}
+
 // handleCommand processes YAML modification commands and updates GitHub
 func handleCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -172,6 +189,9 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		writeResponse(w, false, "Invalid JSON payload", "")
 		return
 	}
+
+	// Apply server defaults
+	applyServerDefaults(&req)
 
 	// Validate request
 	if req.Owner == "" || req.Repo == "" || req.Path == "" || req.Token == "" {
@@ -249,6 +269,9 @@ func handleKeyCheck(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// Apply server defaults
+	applyServerDefaults(&req)
 
 	// Validate request
 	if req.Owner == "" || req.Repo == "" || req.Path == "" || req.Token == "" {
@@ -356,6 +379,9 @@ func handleGetContent(w http.ResponseWriter, r *http.Request) {
 		writeContentResponse(w, false, "Invalid JSON payload", nil)
 		return
 	}
+
+	// Apply server defaults
+	applyServerDefaults(&req)
 
 	// Validate request
 	if req.Owner == "" || req.Repo == "" || req.Path == "" || req.Token == "" {

@@ -25,20 +25,15 @@ const App = () => {
   // Validate GitHub configuration
   createEffect(() => {
     const config = githubConfig();
-    setIsConfigValid(
-      config.owner.trim() !== "" && 
-      config.repo.trim() !== "" && 
-      config.branch.trim() !== "" && 
-      config.path.trim() !== "" && 
-      config.token.trim() !== ""
-    );
+    // Only check if path is set, other values come from server config
+    setIsConfigValid(config.path.trim() !== "");
   });
 
   // Send command to backend
   const sendCommand = async () => {
     if (!isConfigValid()) {
       setFeedback({ 
-        message: "Please fill in all GitHub configuration fields", 
+        message: "Please select or enter a YAML file path", 
         type: "error" 
       });
       setActiveTab("config");
@@ -100,7 +95,7 @@ const App = () => {
   const checkKey = async () => {
     if (!isConfigValid()) {
       setFeedback({ 
-        message: "Please fill in all GitHub configuration fields", 
+        message: "Please select or enter a YAML file path", 
         type: "error" 
       });
       setActiveTab("config");
@@ -169,7 +164,7 @@ const App = () => {
   const fetchYamlContent = async () => {
     if (!isConfigValid()) {
       setFeedback({ 
-        message: "Please fill in all GitHub configuration fields", 
+        message: "Please select or enter a YAML file path", 
         type: "error" 
       });
       setActiveTab("config");
@@ -262,7 +257,7 @@ const App = () => {
           class={`tab ${activeTab() === "config" ? "active" : ""}`}
           onClick={() => setActiveTab("config")}
         >
-          GitHub Config
+          File Selection
         </div>
         <div 
           class={`tab ${activeTab() === "edit" ? "active" : ""}`}
@@ -304,39 +299,12 @@ const App = () => {
         </div>
       </Show>
       
-      {/* GitHub Configuration Tab */}
+      {/* File Selection Tab */}
       <div class={`tab-content ${activeTab() === "config" ? "active" : ""}`}>
         <div class="card">
-          <h2>GitHub Configuration</h2>
+          <h2>YAML File Selection</h2>
           <div class="form-group">
-            <label>Repository Owner</label>
-            <input
-              type="text"
-              value={githubConfig().owner}
-              onInput={(e) => setGithubConfig({...githubConfig(), owner: e.target.value})}
-              placeholder="e.g., octocat"
-            />
-          </div>
-          <div class="form-group">
-            <label>Repository Name</label>
-            <input
-              type="text"
-              value={githubConfig().repo}
-              onInput={(e) => setGithubConfig({...githubConfig(), repo: e.target.value})}
-              placeholder="e.g., hello-world"
-            />
-          </div>
-          <div class="form-group">
-            <label>Branch</label>
-            <input
-              type="text"
-              value={githubConfig().branch}
-              onInput={(e) => setGithubConfig({...githubConfig(), branch: e.target.value})}
-              placeholder="e.g., main"
-            />
-          </div>
-          <div class="form-group">
-            <label>File Path</label>
+            <label>Select YAML File Path</label>
             {availableFilePaths().length > 0 ? (
               <div>
                 <select
@@ -367,16 +335,7 @@ const App = () => {
               />
             )}
           </div>
-          <div class="form-group">
-            <label>GitHub Token</label>
-            <input
-              type="password"
-              value={githubConfig().token}
-              onInput={(e) => setGithubConfig({...githubConfig(), token: e.target.value})}
-              placeholder="GitHub Personal Access Token"
-            />
-          </div>
-          <button onClick={fetchYamlContent}>Connect & Load YAML</button>
+          <button onClick={fetchYamlContent}>Load YAML File</button>
         </div>
       </div>
       
@@ -389,7 +348,7 @@ const App = () => {
             <div class="form-group" style={{ flex: "1" }}>
               <h3>Available Keys</h3>
               {yamlKeys().length === 0 ? (
-                <p>No keys loaded yet. Configure GitHub settings and load a YAML file.</p>
+                <p>No keys loaded yet. Select a YAML file path and load it first.</p>
               ) : (
                 <div class="yaml-keys-list">
                   <ul class="key-tree">
