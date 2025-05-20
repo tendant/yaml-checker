@@ -117,7 +117,7 @@ cd ..
 go run main.go
 ```
 
-3. The application will be available at http://localhost:8082
+3. The application will be available at http://localhost:4000
 
 #### Option 2: Docker deployment
 
@@ -130,7 +130,7 @@ docker build -t yaml-github-editor .
 2. Run the Docker container with environment variables:
 
 ```bash
-docker run -p 8082:8082 \
+docker run -p 4000:4000 \
   -e REPO_OWNER=octocat \
   -e REPO_NAME=hello-world \
   -e BRANCH=main \
@@ -142,10 +142,10 @@ docker run -p 8082:8082 \
 Alternatively, you can use an environment file:
 
 ```bash
-docker run -p 8082:8082 --env-file .env yaml-github-editor
+docker run -p 4000:4000 --env-file .env yaml-github-editor
 ```
 
-3. The application will be available at http://localhost:8082
+3. The application will be available at http://localhost:4000
 
 ## Usage
 
