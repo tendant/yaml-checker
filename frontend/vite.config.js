@@ -7,7 +7,7 @@ export default defineConfig({
     port: 3000, // Development server port
     proxy: {
       '/api': {
-        target: 'http://localhost:8082', // Proxy backend API requests to the Go server
+        target: 'http://localhost:4000', // Proxy backend API requests to the Go server
         changeOrigin: true,
         secure: false,
       },

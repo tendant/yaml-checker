@@ -34,10 +34,10 @@ COPY --from=backend-builder /app/yaml-checker .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Expose the port the app runs on
-EXPOSE 8082
+EXPOSE 4000
 
 # Set default environment variables
-ENV PORT=8082 \
+ENV PORT=4000 \
     HOST="" \
     REPO_OWNER="" \
     REPO_NAME="" \

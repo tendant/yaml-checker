@@ -35,7 +35,7 @@ if ! ps -p $BACKEND_PID > /dev/null; then
     exit 1
 fi
 
-echo "Backend server running on http://localhost:8082"
+echo "Backend server running on http://localhost:4000"
 
 # Start the frontend development server
 echo "Starting SolidJS frontend server..."

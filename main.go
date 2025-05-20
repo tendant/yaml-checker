@@ -477,7 +477,7 @@ func loadServerConfig() {
 		Branch:      getEnv("BRANCH", "main"),
 		GitHubToken: getEnv("GITHUB_TOKEN", ""),
 		Host:        getEnv("HOST", ""), // Default to empty string which means bind to all interfaces
-		Port:        getEnv("PORT", "8082"),
+		Port:        getEnv("PORT", "4000"),
 	}
 
 	// Load file paths from environment variable
