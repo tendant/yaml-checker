@@ -22,6 +22,7 @@ type ServerConfig struct {
 	Branch      string   `json:"branch"`
 	GitHubToken string   `json:"githubToken"`
 	FilePaths   []string `json:"filePaths"`
+	Host        string   `json:"host"`
 	Port        string   `json:"port"`
 }
 
@@ -474,6 +475,7 @@ func loadServerConfig() {
 		RepoName:    getEnv("REPO_NAME", ""),
 		Branch:      getEnv("BRANCH", "main"),
 		GitHubToken: getEnv("GITHUB_TOKEN", ""),
+		Host:        getEnv("HOST", ""), // Default to empty string which means bind to all interfaces
 		Port:        getEnv("PORT", "8082"),
 	}
 
@@ -488,6 +490,7 @@ func loadServerConfig() {
 	log.Printf("  Branch: %s", serverConfig.Branch)
 	log.Printf("  GitHub Token: %s", maskIfNotEmpty(serverConfig.GitHubToken))
 	log.Printf("  File Paths: %v", serverConfig.FilePaths)
+	log.Printf("  Host: %s", serverConfig.Host)
 	log.Printf("  Port: %s", serverConfig.Port)
 }
 
@@ -541,9 +544,9 @@ func main() {
 	http.HandleFunc("/api/config", logRequest(enableCORS(handleServerConfig)))
 
 	// Start server
-	port := ":" + serverConfig.Port
-	log.Printf("Starting server on port %s", port)
-	if err := http.ListenAndServe(port, nil); err != nil {
+	addr := serverConfig.Host + ":" + serverConfig.Port
+	log.Printf("Starting server on %s", addr)
+	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
