@@ -14,6 +14,19 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// ServerConfig holds the server configuration from environment variables
+type ServerConfig struct {
+	RepoOwner   string   `json:"repoOwner"`
+	RepoName    string   `json:"repoName"`
+	Branch      string   `json:"branch"`
+	GitHubToken string   `json:"githubToken"`
+	FilePaths   []string `json:"filePaths"`
+	Port        string   `json:"port"`
+}
+
+// Global server configuration
+var serverConfig ServerConfig
+
 // CommandRequest represents the structure of an incoming command.
 type CommandRequest struct {
 	Command string `json:"command"` // e.g., "set key=value"
@@ -395,14 +408,75 @@ func writeContentResponse(w http.ResponseWriter, success bool, message string, k
 	json.NewEncoder(w).Encode(resp)
 }
 
+// loadServerConfig loads the server configuration from environment variables
+func loadServerConfig() {
+	// Set default values
+	serverConfig = ServerConfig{
+		RepoOwner:   getEnv("REPO_OWNER", ""),
+		RepoName:    getEnv("REPO_NAME", ""),
+		Branch:      getEnv("BRANCH", "main"),
+		GitHubToken: getEnv("GITHUB_TOKEN", ""),
+		Port:        getEnv("PORT", "8082"),
+	}
+
+	// Load file paths from environment variable
+	filePathsStr := getEnv("FILE_PATHS", "config.yaml,config/app.yaml,deploy/values.yaml")
+	serverConfig.FilePaths = strings.Split(filePathsStr, ",")
+
+	// Log configuration (without sensitive data)
+	log.Printf("Server configuration loaded:")
+	log.Printf("  Repository Owner: %s", maskIfNotEmpty(serverConfig.RepoOwner))
+	log.Printf("  Repository Name: %s", maskIfNotEmpty(serverConfig.RepoName))
+	log.Printf("  Branch: %s", serverConfig.Branch)
+	log.Printf("  GitHub Token: %s", maskIfNotEmpty(serverConfig.GitHubToken))
+	log.Printf("  File Paths: %v", serverConfig.FilePaths)
+	log.Printf("  Port: %s", serverConfig.Port)
+}
+
+// getEnv gets an environment variable or returns a default value
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
+
+// maskIfNotEmpty returns "****" if the string is not empty, otherwise returns "<not set>"
+func maskIfNotEmpty(s string) string {
+	if s == "" {
+		return "<not set>"
+	}
+	return "****"
+}
+
+// getServerConfig returns the server configuration as JSON
+func handleServerConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Create a copy of the config without the token for security
+	configCopy := serverConfig
+	configCopy.GitHubToken = ""
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(configCopy)
+}
+
 func main() {
+	// Load server configuration from environment variables
+	loadServerConfig()
+
 	// Set up routes with middleware
 	http.HandleFunc("/api/command", logRequest(enableCORS(handleCommand)))
 	http.HandleFunc("/api/check-key", logRequest(enableCORS(handleKeyCheck)))
 	http.HandleFunc("/api/content", logRequest(enableCORS(handleGetContent)))
+	http.HandleFunc("/api/config", logRequest(enableCORS(handleServerConfig)))
 
 	// Start server
-	port := ":8082"
+	port := ":" + serverConfig.Port
 	log.Printf("Starting server on port %s", port)
 	if err := http.ListenAndServe(port, nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)

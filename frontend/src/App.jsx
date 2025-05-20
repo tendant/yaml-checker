@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show } from "solid-js";
+import { createSignal, createEffect, Show, onMount } from "solid-js";
 
 const App = () => {
   // State management
@@ -19,6 +19,8 @@ const App = () => {
   const [yamlContent, setYamlContent] = createSignal("");
   const [keyValue, setKeyValue] = createSignal({ key: "", value: "" });
   const [isConfigValid, setIsConfigValid] = createSignal(false);
+  const [serverConfig, setServerConfig] = createSignal(null);
+  const [availableFilePaths, setAvailableFilePaths] = createSignal([]);
 
   // Validate GitHub configuration
   createEffect(() => {
@@ -218,6 +220,38 @@ const App = () => {
     setKeyValue({ key, value: "" });
   };
 
+  // Fetch server configuration
+  const fetchServerConfig = async () => {
+    try {
+      const response = await fetch("/api/config");
+      if (response.ok) {
+        const config = await response.json();
+        setServerConfig(config);
+        
+        // Set available file paths
+        if (config.filePaths && config.filePaths.length > 0) {
+          setAvailableFilePaths(config.filePaths);
+        }
+        
+        // Pre-fill GitHub configuration with server defaults
+        setGithubConfig(prev => ({
+          ...prev,
+          owner: config.repoOwner || prev.owner,
+          repo: config.repoName || prev.repo,
+          branch: config.branch || prev.branch,
+          // Don't set token from server config for security reasons
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to fetch server configuration:", error);
+    }
+  };
+
+  // Load server configuration on component mount
+  onMount(() => {
+    fetchServerConfig();
+  });
+
   return (
     <div class="container">
       <h1>YAML GitHub Editor</h1>
@@ -303,12 +337,35 @@ const App = () => {
           </div>
           <div class="form-group">
             <label>File Path</label>
-            <input
-              type="text"
-              value={githubConfig().path}
-              onInput={(e) => setGithubConfig({...githubConfig(), path: e.target.value})}
-              placeholder="e.g., config/app.yaml"
-            />
+            {availableFilePaths().length > 0 ? (
+              <div>
+                <select
+                  value={githubConfig().path}
+                  onChange={(e) => setGithubConfig({...githubConfig(), path: e.target.value})}
+                >
+                  <option value="">Select a file path</option>
+                  {availableFilePaths().map((path) => (
+                    <option value={path}>{path}</option>
+                  ))}
+                </select>
+                <div class="form-group" style={{ marginTop: "10px" }}>
+                  <label>Or enter custom path:</label>
+                  <input
+                    type="text"
+                    value={githubConfig().path}
+                    onInput={(e) => setGithubConfig({...githubConfig(), path: e.target.value})}
+                    placeholder="e.g., config/app.yaml"
+                  />
+                </div>
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={githubConfig().path}
+                onInput={(e) => setGithubConfig({...githubConfig(), path: e.target.value})}
+                placeholder="e.g., config/app.yaml"
+              />
+            )}
           </div>
           <div class="form-group">
             <label>GitHub Token</label>

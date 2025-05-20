@@ -19,6 +19,28 @@ A web application that allows users to update YAML files stored in GitHub reposi
 - npm or yarn
 - [yq](https://github.com/mikefarah/yq) command-line tool installed and available in your PATH
 
+## Environment Variables
+
+The application can be configured using the following environment variables:
+
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `REPO_OWNER` | GitHub repository owner (username or organization) | "" (empty string) |
+| `REPO_NAME` | GitHub repository name | "" (empty string) |
+| `BRANCH` | GitHub branch name | "main" |
+| `GITHUB_TOKEN` | GitHub personal access token | "" (empty string) |
+| `FILE_PATHS` | Comma-separated list of YAML file paths to offer as options | "config.yaml,config/app.yaml,deploy/values.yaml" |
+| `PORT` | Port number for the server | "8082" |
+
+You can set these environment variables directly or use a `.env` file. A sample `.env.example` file is provided that you can copy and modify:
+
+```bash
+cp .env.example .env
+# Edit .env with your preferred text editor
+```
+
+The `run-dev.sh` script will automatically load environment variables from the `.env` file if it exists.
+
 ## Installation
 
 1. Clone the repository:
@@ -105,10 +127,22 @@ go run main.go
 docker build -t yaml-github-editor .
 ```
 
-2. Run the Docker container:
+2. Run the Docker container with environment variables:
 
 ```bash
-docker run -p 8082:8082 yaml-github-editor
+docker run -p 8082:8082 \
+  -e REPO_OWNER=octocat \
+  -e REPO_NAME=hello-world \
+  -e BRANCH=main \
+  -e GITHUB_TOKEN=your_github_token \
+  -e FILE_PATHS=config.yaml,deploy/values.yaml \
+  yaml-github-editor
+```
+
+Alternatively, you can use an environment file:
+
+```bash
+docker run -p 8082:8082 --env-file .env yaml-github-editor
 ```
 
 3. The application will be available at http://localhost:8082

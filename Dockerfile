@@ -36,5 +36,13 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Expose the port the app runs on
 EXPOSE 8082
 
+# Set default environment variables
+ENV PORT=8082 \
+    REPO_OWNER="" \
+    REPO_NAME="" \
+    BRANCH="main" \
+    GITHUB_TOKEN="" \
+    FILE_PATHS="config.yaml,config/app.yaml,deploy/values.yaml"
+
 # Command to run the application
 CMD ["./yaml-checker"]
