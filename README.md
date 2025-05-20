@@ -30,7 +30,7 @@ The application can be configured using the following environment variables:
 | `BRANCH` | GitHub branch name | "main" |
 | `GITHUB_TOKEN` | GitHub personal access token | "" (empty string) |
 | `FILE_PATHS` | Comma-separated list of YAML file paths to offer as options | "config.yaml,config/app.yaml,deploy/values.yaml" |
-| `PORT` | Port number for the server | "8082" |
+| `PORT` | Port number for the server | "4000" |
 
 You can set these environment variables directly or use a `.env` file. A sample `.env.example` file is provided that you can copy and modify:
 
