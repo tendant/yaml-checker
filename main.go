@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -526,6 +527,38 @@ func handleServerConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(configCopy)
 }
 
+// spaFileServer serves static files and routes all non-file requests to index.html
+// This is necessary for single-page applications with client-side routing
+func spaFileServer(staticDir string) http.Handler {
+	fileServer := http.FileServer(http.Dir(staticDir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get the absolute path to prevent directory traversal
+		path, err := filepath.Abs(r.URL.Path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// If the path starts with /api, don't try to serve a static file
+		if strings.HasPrefix(path, "/api") {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Check if file exists
+		requestedFile := filepath.Join(staticDir, r.URL.Path)
+		_, err = os.Stat(requestedFile)
+		if os.IsNotExist(err) {
+			// File doesn't exist, serve index.html instead
+			http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+			return
+		}
+
+		// File exists, serve it using the file server
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	// Load .env file if it exists
 	if err := godotenv.Load(); err != nil {
@@ -537,16 +570,30 @@ func main() {
 	// Load server configuration from environment variables
 	loadServerConfig()
 
-	// Set up routes with middleware
-	http.HandleFunc("/api/command", logRequest(enableCORS(handleCommand)))
-	http.HandleFunc("/api/check-key", logRequest(enableCORS(handleKeyCheck)))
-	http.HandleFunc("/api/content", logRequest(enableCORS(handleGetContent)))
-	http.HandleFunc("/api/config", logRequest(enableCORS(handleServerConfig)))
+	// Create a new ServeMux to handle routes
+	mux := http.NewServeMux()
+
+	// Set up API routes with middleware
+	mux.HandleFunc("/api/command", logRequest(enableCORS(handleCommand)))
+	mux.HandleFunc("/api/check-key", logRequest(enableCORS(handleKeyCheck)))
+	mux.HandleFunc("/api/content", logRequest(enableCORS(handleGetContent)))
+	mux.HandleFunc("/api/config", logRequest(enableCORS(handleServerConfig)))
+
+	// Serve static frontend files
+	frontendDir := "./frontend/dist"
+	// Check if frontend directory exists
+	if _, err := os.Stat(frontendDir); os.IsNotExist(err) {
+		log.Printf("Warning: Frontend directory %s not found. Frontend will not be served.", frontendDir)
+	} else {
+		log.Printf("Serving frontend from %s", frontendDir)
+		// Use the SPA file server for all non-API routes
+		mux.Handle("/", spaFileServer(frontendDir))
+	}
 
 	// Start server
 	addr := serverConfig.Host + ":" + serverConfig.Port
 	log.Printf("Starting server on %s", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }

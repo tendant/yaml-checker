@@ -38,6 +38,7 @@ EXPOSE 8082
 
 # Set default environment variables
 ENV PORT=8082 \
+    HOST="" \
     REPO_OWNER="" \
     REPO_NAME="" \
     BRANCH="main" \
