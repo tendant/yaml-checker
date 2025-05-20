@@ -3,9 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v57/github"
 	"golang.org/x/oauth2"
@@ -30,21 +33,59 @@ type CommandResponse struct {
 
 // KeyCheckResponse represents the response for key check endpoint
 type KeyCheckResponse struct {
-	Exists    bool   `json:"exists"`
-	ValueLen  int    `json:"valueLength,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Exists   bool   `json:"exists"`
+	ValueLen int    `json:"valueLength,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
-var githubClient *github.Client
+// ContentResponse represents the response for content fetch endpoint
+type ContentResponse struct {
+	Success bool     `json:"success"`
+	Message string   `json:"message"`
+	Keys    []string `json:"keys,omitempty"`
+}
 
-func initGitHubClient(token string) {
+// initGitHubClient creates a new GitHub client with the provided token
+func initGitHubClient(token string) *github.Client {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
 	tc := oauth2.NewClient(oauth2.NoContext, ts)
-	githubClient = github.NewClient(tc)
+	return github.NewClient(tc)
 }
 
+// enableCORS adds CORS headers to the response
+func enableCORS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, Authorization")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Call the next handler
+		next(w, r)
+	}
+}
+
+// logRequest logs information about incoming requests
+func logRequest(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		startTime := time.Now()
+		log.Printf("Started %s %s", r.Method, r.URL.Path)
+
+		next(w, r)
+
+		log.Printf("Completed %s %s in %v", r.Method, r.URL.Path, time.Since(startTime))
+	}
+}
+
+// executeYqCommand executes a YQ command on the provided YAML content
 func executeYqCommand(content []byte, command string) ([]byte, error) {
 	// Create a temporary command that operates on the content directly
 	parts := strings.SplitN(command, " ", 2)
@@ -81,6 +122,32 @@ func executeYqCommand(content []byte, command string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
+// getFileContent fetches a file's content from GitHub
+func getFileContent(r *http.Request, req CommandRequest) (string, *github.RepositoryContent, error) {
+	// Initialize GitHub client
+	githubClient := initGitHubClient(req.Token)
+
+	// Get the current file content from GitHub
+	fileContent, _, _, err := githubClient.Repositories.GetContents(
+		r.Context(),
+		req.Owner,
+		req.Repo,
+		req.Path,
+		&github.RepositoryContentGetOptions{Ref: req.Branch},
+	)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to fetch file: %v", err)
+	}
+
+	content, err := fileContent.GetContent()
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to decode content: %v", err)
+	}
+
+	return content, fileContent, nil
+}
+
+// handleCommand processes YAML modification commands and updates GitHub
 func handleCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -93,25 +160,21 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Initialize GitHub client
-	initGitHubClient(req.Token)
-
-	// Get the current file content from GitHub
-	fileContent, _, _, err := githubClient.Repositories.GetContents(
-		r.Context(),
-		req.Owner,
-		req.Repo,
-		req.Path,
-		&github.RepositoryContentGetOptions{Ref: req.Branch},
-	)
-	if err != nil {
-		writeResponse(w, false, fmt.Sprintf("Failed to fetch file: %v", err), "")
+	// Validate request
+	if req.Owner == "" || req.Repo == "" || req.Path == "" || req.Token == "" {
+		writeResponse(w, false, "Missing required fields: owner, repo, path, and token are required", "")
 		return
 	}
 
-	content, err := fileContent.GetContent()
+	if req.Command == "" {
+		writeResponse(w, false, "Command is required", "")
+		return
+	}
+
+	// Get file content
+	content, fileContent, err := getFileContent(r, req)
 	if err != nil {
-		writeResponse(w, false, fmt.Sprintf("Failed to decode content: %v", err), "")
+		writeResponse(w, false, err.Error(), "")
 		return
 	}
 
@@ -121,6 +184,9 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		writeResponse(w, false, fmt.Sprintf("Command failed: %v", err), "")
 		return
 	}
+
+	// Initialize GitHub client
+	githubClient := initGitHubClient(req.Token)
 
 	// Update the file in GitHub
 	opts := &github.RepositoryContentFileOptions{
@@ -142,9 +208,20 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeResponse(w, true, "Command executed and changes pushed to GitHub", string(newContent))
+	// Extract keys from the updated content to return instead of the full content
+	keys, err := extractYamlKeys(string(newContent))
+	if err != nil {
+		// If we can't extract keys, just return success without content
+		writeResponse(w, true, "Command executed and changes pushed to GitHub", "")
+		return
+	}
+
+	// Convert keys to a string representation for the response
+	keysStr := "Updated keys:\n" + strings.Join(keys, "\n")
+	writeResponse(w, true, "Command executed and changes pushed to GitHub", keysStr)
 }
 
+// handleKeyCheck checks if a key exists in a YAML file
 func handleKeyCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
@@ -160,6 +237,15 @@ func handleKeyCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate request
+	if req.Owner == "" || req.Repo == "" || req.Path == "" || req.Token == "" {
+		writeKeyCheckResponse(w, KeyCheckResponse{
+			Exists: false,
+			Error:  "Missing required fields: owner, repo, path, and token are required",
+		})
+		return
+	}
+
 	key := r.URL.Query().Get("key")
 	if key == "" {
 		writeKeyCheckResponse(w, KeyCheckResponse{
@@ -169,30 +255,20 @@ func handleKeyCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Initialize GitHub client
-	initGitHubClient(req.Token)
-
-	// Get the file content from GitHub
-	fileContent, _, _, err := githubClient.Repositories.GetContents(
-		r.Context(),
-		req.Owner,
-		req.Repo,
-		req.Path,
-		&github.RepositoryContentGetOptions{Ref: req.Branch},
-	)
+	// Get file content
+	content, _, err := getFileContent(r, req)
 	if err != nil {
 		writeKeyCheckResponse(w, KeyCheckResponse{
 			Exists: false,
-			Error:  fmt.Sprintf("Failed to fetch file: %v", err),
+			Error:  err.Error(),
 		})
 		return
 	}
 
-	content, err := fileContent.GetContent()
-	if err != nil {
+	// Special case for the frontend to just check if the file exists
+	if key == "__fetch_content_only__" {
 		writeKeyCheckResponse(w, KeyCheckResponse{
 			Exists: false,
-			Error:  fmt.Sprintf("Failed to decode content: %v", err),
 		})
 		return
 	}
@@ -223,6 +299,75 @@ func handleKeyCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// extractYamlKeys extracts only the keys from YAML content without values
+func extractYamlKeys(content string) ([]string, error) {
+	// Create a temporary file with the YAML content
+	tmpFile, err := os.CreateTemp("", "yaml-keys-*.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(content); err != nil {
+		return nil, fmt.Errorf("failed to write to temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	// Use yq to extract all keys without values
+	cmd := exec.Command("yq", "eval", ".. | select(. == *) | path | join(\".\") | select(length > 0)", tmpFile.Name())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract keys: %v", err)
+	}
+
+	// Split the output by lines and filter empty lines
+	keys := []string{}
+	for _, line := range strings.Split(string(output), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			keys = append(keys, line)
+		}
+	}
+
+	return keys, nil
+}
+
+// handleGetContent fetches YAML keys without values
+func handleGetContent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req CommandRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeContentResponse(w, false, "Invalid JSON payload", nil)
+		return
+	}
+
+	// Validate request
+	if req.Owner == "" || req.Repo == "" || req.Path == "" || req.Token == "" {
+		writeContentResponse(w, false, "Missing required fields: owner, repo, path, and token are required", nil)
+		return
+	}
+
+	// Get file content
+	content, _, err := getFileContent(r, req)
+	if err != nil {
+		writeContentResponse(w, false, err.Error(), nil)
+		return
+	}
+
+	// Extract only the keys from the YAML content
+	keys, err := extractYamlKeys(content)
+	if err != nil {
+		writeContentResponse(w, false, fmt.Sprintf("Failed to extract keys: %v", err), nil)
+		return
+	}
+
+	writeContentResponse(w, true, "YAML keys fetched successfully", keys)
+}
+
+// writeResponse writes a JSON response for command endpoints
 func writeResponse(w http.ResponseWriter, success bool, message string, content string) {
 	resp := CommandResponse{
 		Success: success,
@@ -233,13 +378,33 @@ func writeResponse(w http.ResponseWriter, success bool, message string, content 
 	json.NewEncoder(w).Encode(resp)
 }
 
+// writeKeyCheckResponse writes a JSON response for key check endpoint
 func writeKeyCheckResponse(w http.ResponseWriter, resp KeyCheckResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
 
+// writeContentResponse writes a JSON response for content fetch endpoint
+func writeContentResponse(w http.ResponseWriter, success bool, message string, keys []string) {
+	resp := ContentResponse{
+		Success: success,
+		Message: message,
+		Keys:    keys,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 func main() {
-	http.HandleFunc("/api/command", handleCommand)
-	http.HandleFunc("/api/check-key", handleKeyCheck)
-	http.ListenAndServe(":8080", nil)
+	// Set up routes with middleware
+	http.HandleFunc("/api/command", logRequest(enableCORS(handleCommand)))
+	http.HandleFunc("/api/check-key", logRequest(enableCORS(handleKeyCheck)))
+	http.HandleFunc("/api/content", logRequest(enableCORS(handleGetContent)))
+
+	// Start server
+	port := ":8082"
+	log.Printf("Starting server on port %s", port)
+	if err := http.ListenAndServe(port, nil); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
